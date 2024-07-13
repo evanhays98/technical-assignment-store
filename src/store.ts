@@ -32,6 +32,23 @@ export function Restrict(permission?: Permission): any {
             target.__permissions__ = {};
         }
         target.__permissions__[key] = permission;
+
+        const store = target as Store;
+        Object.defineProperty(store, key, {
+            get() {
+                return this.read(key);
+            },
+            set(value: StoreValue) {
+                if (!this.data[key]) {
+                    const permission = this.permissions[key]
+                    this.permissions[key] = "w";
+                    const res = this.write(key, value);
+                    this.permissions[key] = permission;
+                    return res;
+                }
+                return this.write(key, value);
+            },
+        });
     };
 }
 
@@ -43,6 +60,7 @@ export class Store implements IStore {
     constructor() {
         const prototypes = Object.getPrototypeOf(this);
         this.permissions = prototypes.__permissions__;
+        this.defaultPolicy = "rw";
         this.data = {};
     }
 
@@ -58,8 +76,24 @@ export class Store implements IStore {
 
     read(path: string): StoreResult {
         const splitPath = path.split(":");
-        const mainPath = splitPath[0]
-        let currentValue = this.data[splitPath[0]];
+        const mainKey = splitPath[0]
+        let currentValue = this.data[mainKey];
+
+        if (currentValue instanceof Store) {
+            return currentValue.read(splitPath.slice(1, splitPath.length).join(':'));
+        }
+
+        for (let i = 1; i < splitPath.length; i++) {
+            const key = splitPath[i];
+            if (!currentValue || typeof currentValue !== "object" || Array.isArray(currentValue)) {
+                if (!this.defaultPolicy.includes("r")) {
+                    throw new Error("Permission denied");
+                }
+                return undefined;
+            }
+            currentValue = currentValue[key];
+        }
+
         if (!this.allowedToRead(path)) {
             throw new Error("Permission denied");
         }
@@ -67,13 +101,36 @@ export class Store implements IStore {
     }
 
     write(path: string, value: StoreValue): StoreValue {
-        if (typeof value === "function") {
-            value = value();
+        if (!value) {
+            throw new Error("Value must be provided");
         }
+
+        const splitPath = path.split(":");
+        let currentValue: any = this.data;
+
+        // loop on path to find the correct object to write to
+        for (let i = 0; i < splitPath.length - 1; i++) {
+            const key = splitPath[i];
+
+            // if the current value is a store, call write on it
+            if (currentValue instanceof Store) {
+                return currentValue.write(splitPath.slice(i, splitPath.length).join(':'), value);
+            }
+
+            if (!currentValue[key] || typeof currentValue[key] !== "object") {
+                currentValue[key] = {};
+            }
+            currentValue = currentValue[key];
+        }
+
+        const finalKey = splitPath[splitPath.length - 1];
+
         if (!this.allowedToWrite(path)) {
             throw new Error("Permission denied");
         }
-        this.data[path] = value;
+
+        currentValue[finalKey] = value;
+
         return value;
     }
 
