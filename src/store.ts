@@ -71,6 +71,8 @@ export function Restrict(permission?: Permission): any {
 }
 
 export class Store implements IStore {
+    [key: string]: any; // to allow dynamic keys
+
     private readonly data: Record<string, StoreValue> = {};
     private readonly permissions: Record<string, Permission> = {};
     defaultPolicy: Permission = "rw";
@@ -96,6 +98,10 @@ export class Store implements IStore {
         const splitPath = path.split(":");
         const mainKey = splitPath[0]
         let currentValue = this.data[mainKey];
+
+        if (typeof currentValue === 'function') {
+            currentValue = currentValue();
+        }
 
         if (currentValue instanceof Store) {
             return currentValue.read(splitPath.slice(1, splitPath.length).join(':'));
@@ -160,6 +166,18 @@ export class Store implements IStore {
     }
 
     entries(): JSONObject {
-        throw new Error("Method not implemented.");
+        const entries: JSONObject = {};
+        for (const key in this.data) {
+            if (this.allowedToRead(key)) {
+                const value = this.data[key];
+                if (value instanceof Store) {
+                    entries[key] = value.entries();
+                }
+                if (value && typeof value !== 'function') {
+                    entries[key] = value;
+                }
+            }
+        }
+        return entries;
     }
 }
