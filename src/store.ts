@@ -26,6 +26,24 @@ export interface IStore {
     entries(): JSONObject;
 }
 
+function flattenEntries(entries: JSONObject): Record<string, JSONPrimitive | JSONArray> {
+    const result: Record<string, JSONPrimitive | JSONArray> = {};
+
+    const flatten = (obj: JSONObject, parentKey = '') => {
+        for (const key in obj) {
+            const fullKey = parentKey ? `${parentKey}:${key}` : key;
+            if (typeof obj[key] === 'object' && obj[key]) {
+                flatten(obj[key] as JSONObject, fullKey);
+            } else {
+                result[fullKey] = obj[key] as JSONPrimitive | JSONArray;
+            }
+        }
+    };
+
+    flatten(entries);
+    return result;
+}
+
 export function Restrict(permission?: Permission): any {
     return function (target: any, key: string) {
         if (!target.__permissions__) {
@@ -59,7 +77,7 @@ export class Store implements IStore {
 
     constructor() {
         const prototypes = Object.getPrototypeOf(this);
-        this.permissions = prototypes.__permissions__;
+        this.permissions = prototypes.__permissions__ || {};
         this.defaultPolicy = "rw";
         this.data = {};
     }
@@ -135,7 +153,10 @@ export class Store implements IStore {
     }
 
     writeEntries(entries: JSONObject): void {
-        throw new Error("Method not implemented.");
+        const flatEntries = flattenEntries(entries);
+        for (const key in flatEntries) {
+            this.write(key, flatEntries[key]);
+        }
     }
 
     entries(): JSONObject {
