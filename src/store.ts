@@ -101,6 +101,9 @@ export class Store implements IStore {
 
         if (typeof currentValue === 'function') {
             currentValue = currentValue();
+            if (splitPath.length === 1 && this.defaultPolicy.includes("r")) {
+                return currentValue as StoreResult;
+            }
         }
 
         if (currentValue instanceof Store) {
